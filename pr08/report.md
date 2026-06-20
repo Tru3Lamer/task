@@ -1,3 +1,68 @@
+# ПР №9. Следы вредоносного ПО в Linux
+
+**Студент:** Мишарин Павел  
+**Дата:** 20 июня 2026  
+**ОС:** Debian 12  
+
+---
+
+## 1. Что было посажено
+
+В ходе практической работы в систему был внедрён учебный «вредонос», имитирующий поведение реального вредоносного ПО. Для обеспечения выживания после перезагрузки и маскировки активности использовались следующие механизмы автозапуска:
+
+- **Cron** — в планировщик текущего пользователя добавлены две записи: `@reboot /tmp/.hidden_malware/backdoor.sh &` (запуск при загрузке) и `*/5 * * * * /tmp/.hidden_malware/backdoor.sh &` (запуск каждые пять минут). Обе используют скрытую директорию `/tmp/.hidden_malware/`.
+
+- **Systemd (пользовательский)** — в `~/.config/systemd/user/` создан unit-файл `system-helper.service` с `ExecStart=/tmp/.hidden_malware/backdoor.sh`, `Restart=always` и `WantedBy=default.target`. Сервис активирован через `systemctl --user enable`.
+
+- **Bashrc** — в `~/.bashrc` добавлена строка `/tmp/.hidden_malware/backdoor.sh &` с комментарием `# system update helper` для маскировки.
+
+- **Ручной запуск** — в фоне запущен `/tmp/.hidden_malware/listener.sh`, открывший порт `4444` для имитации backdoor-соединения.
+
+Скрипты: `backdoor.sh` пишет логи в `activity.log`, `listener.sh` слушает порт `4444` через `nc`. Все файлы размещены в скрытой папке `/tmp/.hidden_malware/`.
+
+---
+
+## 2. Что нашли — процессы
+
+Команда `ps aux | grep '/tmp'` выявила два подозрительных процесса: `/bin/bash /tmp/.hidden_malware/backdoor.sh` и `/bin/bash /tmp/.hidden_malware/listener.sh`. Признаки подозрительности: запуск из `/tmp/`, скрытая папка `.hidden_malware`, TTY = `?` (фоновый режим), нестандартные имена, множественные экземпляры `backdoor.sh` (от cron и systemd). Дерево процессов (`ps auxf`) показало, что `listener.sh` запущен из оболочки, а `backdoor.sh` — от cron и systemd.
+
+---
+
+## 3. Что нашли — сетевые соединения
+
+Команда `ss -tulnp | grep 4444` показала: `tcp LISTEN 0 128 0.0.0.0:4444 0.0.0.0:* users:(("listener.sh",pid=1234,fd=3))`. Команда `sudo lsof -i :4444` подтвердила: `listener.sh 1234 user 3u IPv4 XXXXX 0t0 TCP *:4444 (LISTEN)`. Порт `4444` открыт на всех интерфейсах, занят процессом `listener.sh` из `/tmp/.hidden_malware/`. `lsof` связывает порт с процессом, показывая PID, имя, полный путь к файлу и файловый дескриптор.
+
+---
+
+## 4. Что нашли — автозапуск
+
+**Cron** (`crontab -l`): 
+@reboot /tmp/.hidden_malware/backdoor.sh &
+*/5 * * * * /tmp/.hidden_malware/backdoor.sh &
+
+Подозрительно: запуск из `/tmp/`, отсутствие комментариев, `@reboot` и частая периодичность.
+
+**Systemd** (`systemctl --user list-unit-files --state=enabled`): найден `system-helper.service`. Статус (`systemctl --user status`): активен, перезапускается. Содержимое unit-файла:
+[Unit]
+Description=System Helper Service
+After=default.target
+[Service]
+ExecStart=/tmp/.hidden_malware/backdoor.sh
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=default.target
+[Unit]
+Description=System Helper Service
+After=default.target
+[Service]
+ExecStart=/tmp/.hidden_malware/backdoor.sh
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=default.target
+# system update helper
+/tmp/.hidden_malware/backdoor.sh &
 Строка добавлена в конец с маскирующим комментарием.
 
 **Другие места**: `/etc/rc.local` пуст, `/etc/ld.so.preload` пуст, `~/.ssh/authorized_keys` без посторонних ключей, `/etc/hosts` без перенаправлений.
