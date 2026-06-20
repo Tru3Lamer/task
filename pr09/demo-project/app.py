@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2024 MISHARIN PAVEL
-#
+# SPDX-FileCopyrightText: 2024 Ваше Имя
 # SPDX-License-Identifier: MIT
 
 import requests
