@@ -1,0 +1,52 @@
+name: License File Check
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  check-license:
+    name: Check LICENSE file exists
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check LICENSE file
+        id: check_license
+        run: |
+          if [ -f "LICENSE" ]; then
+            echo "LICENSE file exists" >> $GITHUB_STEP_SUMMARY
+            echo "license_exists=true" >> $GITHUB_OUTPUT
+            
+            if grep -q "MIT License" LICENSE; then
+              echo "License type: MIT" >> $GITHUB_STEP_SUMMARY
+            elif grep -q "Apache License" LICENSE; then
+              echo "License type: Apache-2.0" >> $GITHUB_STEP_SUMMARY
+            elif grep -q "GNU GENERAL PUBLIC LICENSE" LICENSE; then
+              echo "License type: GPL" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "License type: Unknown (custom)" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "No LICENSE file found!" >> $GITHUB_STEP_SUMMARY
+            echo "::error::No LICENSE file found in repository root!"
+            exit 1
+          fi
+          
+      - name: Check SPDX headers (basic)
+        run: |
+          echo "## SPDX Headers Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          spdx_count=$(find task -type f -name "*.py" -o -name "*.sh" -o -name "*.md" 2>/dev/null | xargs grep -l "SPDX-License-Identifier" 2>/dev/null | wc -l)
+          echo "Files with SPDX headers: $spdx_count" >> $GITHUB_STEP_SUMMARY
+          
+          if [ $spdx_count -gt 0 ]; then
+            echo "SPDX headers found in $spdx_count files" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No SPDX headers found" >> $GITHUB_STEP_SUMMARY
+          fi

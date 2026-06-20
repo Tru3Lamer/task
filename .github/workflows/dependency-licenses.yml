@@ -1,0 +1,70 @@
+name: Dependency License Check
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '**/requirements.txt'
+      - '**/pyproject.toml'
+      - '**/setup.py'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - '**/requirements.txt'
+      - '**/pyproject.toml'
+      - '**/setup.py'
+
+jobs:
+  check-licenses:
+    name: Check Python dependencies licenses
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pip-licenses
+        run: |
+          pip install pip-licenses
+
+      - name: Find requirements files
+        id: find_req
+        run: |
+          if [ -f "task/pr09/demo-project/requirements.txt" ]; then
+            echo "requirements_found=true" >> $GITHUB_OUTPUT
+            echo "requirements_path=task/pr09/demo-project/requirements.txt" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies and check licenses
+        if: steps.find_req.outputs.requirements_found == 'true'
+        run: |
+          pip install -r ${{ steps.find_req.outputs.requirements_path }}
+          
+          echo "## Dependency Licenses" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | Version | License |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|---------|---------|" >> $GITHUB_STEP_SUMMARY
+          pip-licenses --format=markdown | tail -n +3 | while read line; do
+            echo "| $line" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Check for copyleft licenses
+        if: steps.find_req.outputs.requirements_found == 'true'
+        run: |
+          echo "## Copyleft License Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if pip-licenses | grep -E "GNU General Public License|GPL|AGPL|Affero" > /dev/null; then
+            echo "WARNING: Copyleft licenses (GPL/AGPL) found in dependencies!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Review required for commercial use." >> $GITHUB_STEP_SUMMARY
+            echo "::warning::GPL/AGPL licensed dependencies found! Review required."
+            pip-licenses | grep -E "GNU General Public License|GPL|AGPL|Affero" || true
+          else
+            echo "No copyleft licenses found in dependencies." >> $GITHUB_STEP_SUMMARY
+          fi
